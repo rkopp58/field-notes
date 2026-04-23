@@ -1,0 +1,918 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Field Notes</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700&family=JetBrains+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0f0e0c;
+    --surface: #1a1916;
+    --surface2: #232220;
+    --border: #2e2c28;
+    --accent: #c9a84c;
+    --accent2: #8b6914;
+    --text: #e8e4d9;
+    --muted: #7a7568;
+    --danger: #c0392b;
+    --success: #2ecc71;
+    --blue: #4a90d9;
+    --safe-bottom: env(safe-area-inset-bottom, 0px);
+    --safe-top: env(safe-area-inset-top, 0px);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 14px;
+    height: 100%;
+    overflow: hidden;
+    position: fixed;
+    width: 100%;
+  }
+  .app {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    padding-top: var(--safe-top);
+  }
+
+  /* ── HEADER ── */
+  header {
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    background: var(--surface);
+    flex-shrink: 0;
+    gap: 10px;
+  }
+  .logo {
+    font-family: 'Playfair Display', serif;
+    font-size: 19px;
+    color: var(--accent);
+    flex: 1;
+  }
+  .sync-pill {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    color: var(--muted);
+    padding: 4px 10px;
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    background: var(--surface2);
+    white-space: nowrap;
+  }
+  .sync-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); flex-shrink: 0; transition: background 0.3s; }
+  .sync-dot.synced  { background: var(--success); }
+  .sync-dot.syncing { background: var(--accent); animation: syncpulse 1s infinite; }
+  .sync-dot.error   { background: var(--danger); }
+  @keyframes syncpulse { 0%,100%{opacity:1}50%{opacity:0.3} }
+  .icon-btn {
+    width: 38px; height: 38px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--surface2);
+    color: var(--text);
+    font-size: 17px;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+    transition: border-color 0.2s;
+    -webkit-user-select: none; user-select: none;
+  }
+  .icon-btn:active { border-color: var(--accent); background: var(--surface); }
+  .icon-btn.active { border-color: var(--success); color: var(--success); }
+
+  /* ── MAIN ── */
+  .main { display: flex; flex: 1; overflow: hidden; position: relative; }
+
+  /* ── SIDEBAR DRAWER ── */
+  .sidebar-overlay {
+    position: absolute; inset: 0;
+    background: rgba(0,0,0,0.6);
+    z-index: 50;
+    opacity: 0; pointer-events: none;
+    transition: opacity 0.25s;
+  }
+  .sidebar-overlay.open { opacity: 1; pointer-events: all; }
+  .sidebar {
+    position: absolute; left: 0; top: 0; bottom: 0;
+    width: 280px;
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    z-index: 51;
+    display: flex; flex-direction: column;
+    transform: translateX(-100%);
+    transition: transform 0.28s cubic-bezier(0.4,0,0.2,1);
+  }
+  .sidebar.open { transform: translateX(0); }
+  @media (min-width: 700px) {
+    .sidebar {
+      position: relative; transform: none !important;
+      width: 220px; flex-shrink: 0;
+    }
+    .sidebar-overlay { display: none; }
+    .menu-btn { display: none !important; }
+  }
+  .sidebar-header {
+    padding: 14px 16px 10px;
+    font-size: 10px; color: var(--muted);
+    letter-spacing: 0.12em; text-transform: uppercase;
+    border-bottom: 1px solid var(--border);
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .sidebar-close {
+    background: none; border: none; color: var(--muted);
+    font-size: 20px; cursor: pointer; padding: 2px 6px;
+  }
+  .note-list { flex: 1; overflow-y: auto; padding: 6px 0; -webkit-overflow-scrolling: touch; }
+  .note-list::-webkit-scrollbar { display: none; }
+  .note-item {
+    padding: 12px 16px;
+    cursor: pointer;
+    transition: background 0.15s;
+    border-left: 2px solid transparent;
+    active-state: background var(--surface2);
+  }
+  .note-item:active, .note-item.active { background: var(--surface2); border-left-color: var(--accent); padding-left: 14px; }
+  .note-date { color: var(--accent); font-size: 12px; margin-bottom: 4px; }
+  .note-preview { color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  /* ── CHAT ── */
+  .chat-area { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-width: 0; }
+  .chat-date-bar {
+    padding: 9px 16px;
+    border-bottom: 1px solid var(--border);
+    font-size: 11px; color: var(--muted);
+    background: var(--surface);
+    display: flex; align-items: center; gap: 8px;
+    flex-shrink: 0;
+  }
+  .date-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); flex-shrink: 0; }
+  .messages {
+    flex: 1; overflow-y: auto;
+    padding: 14px 14px 8px;
+    display: flex; flex-direction: column; gap: 10px;
+    -webkit-overflow-scrolling: touch;
+  }
+  .messages::-webkit-scrollbar { display: none; }
+  .msg { max-width: 82%; animation: fadeIn 0.22s ease; }
+  @keyframes fadeIn { from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:none} }
+  .msg.user { align-self: flex-end; }
+  .msg.assistant { align-self: flex-start; }
+  .msg-bubble {
+    padding: 11px 14px;
+    border-radius: 12px;
+    line-height: 1.6; font-size: 14px;
+  }
+  .msg.user .msg-bubble {
+    background: var(--surface2); border: 1px solid var(--border);
+    border-bottom-right-radius: 3px;
+  }
+  .msg.assistant .msg-bubble {
+    background: linear-gradient(135deg,#1e1c18,#23211c);
+    border: 1px solid var(--accent2);
+    border-bottom-left-radius: 3px;
+  }
+  .msg-time { font-size: 10px; color: var(--muted); margin-top: 4px; text-align: right; }
+  .msg.assistant .msg-time { text-align: left; }
+  .empty-state {
+    flex: 1; display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    color: var(--muted); gap: 12px; padding: 20px;
+    text-align: center;
+  }
+  .empty-icon { font-size: 44px; opacity: 0.4; }
+  .empty-text { font-family: 'Playfair Display', serif; font-size: 20px; color: var(--muted); }
+  .empty-sub { font-size: 12px; color: var(--muted); opacity: 0.6; line-height: 1.6; }
+
+  /* ── STATUS BAR ── */
+  .status-bar {
+    padding: 5px 14px; font-size: 10px; color: var(--muted);
+    border-top: 1px solid var(--border); background: var(--surface);
+    display: flex; gap: 14px; flex-shrink: 0;
+  }
+  .status-item { display: flex; gap: 5px; align-items: center; }
+  .status-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--success); }
+
+  /* ── INPUT AREA ── */
+  .input-area {
+    padding: 10px 12px;
+    padding-bottom: calc(10px + var(--safe-bottom));
+    border-top: 1px solid var(--border);
+    background: var(--surface);
+    flex-shrink: 0;
+  }
+  .input-row { display: flex; gap: 8px; align-items: flex-end; }
+  textarea {
+    flex: 1;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 15px;
+    padding: 11px 13px;
+    border-radius: 22px;
+    resize: none;
+    outline: none;
+    min-height: 44px;
+    max-height: 130px;
+    line-height: 1.5;
+    transition: border-color 0.2s;
+    -webkit-appearance: none;
+  }
+  textarea:focus { border-color: var(--accent); }
+  textarea::placeholder { color: var(--muted); }
+  .action-btn {
+    width: 44px; height: 44px;
+    border-radius: 50%;
+    border: none;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 18px;
+    flex-shrink: 0;
+    transition: all 0.2s;
+    -webkit-user-select: none; user-select: none;
+  }
+  .mic-btn { background: var(--surface2); border: 1px solid var(--border); color: var(--muted); }
+  .mic-btn:active { border-color: var(--accent); }
+  .mic-btn.recording { background: #3d1010; border: 1px solid var(--danger); color: var(--danger); animation: pulse 1.2s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1}50%{opacity:0.6} }
+  .send-btn { background: var(--accent); color: #0f0e0c; }
+  .send-btn:active { background: #e0b84e; transform: scale(0.94); }
+
+  /* ── BOTTOM NAV (mobile) ── */
+  .bottom-nav {
+    display: none;
+    border-top: 1px solid var(--border);
+    background: var(--surface);
+    padding-bottom: var(--safe-bottom);
+    flex-shrink: 0;
+  }
+  @media (max-width: 699px) {
+    .bottom-nav { display: flex; }
+  }
+  .nav-item {
+    flex: 1; padding: 10px 4px 8px;
+    display: flex; flex-direction: column; align-items: center; gap: 3px;
+    cursor: pointer; color: var(--muted); font-size: 10px;
+    transition: color 0.2s; border: none; background: none;
+    font-family: 'JetBrains Mono', monospace;
+    -webkit-user-select: none; user-select: none;
+  }
+  .nav-item .nav-icon { font-size: 20px; }
+  .nav-item.active { color: var(--accent); }
+  .nav-item:active { color: var(--accent); }
+
+  /* ── MODALS ── */
+  .modal-overlay {
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.75); z-index: 200;
+    display: flex; align-items: flex-end;
+    opacity: 0; pointer-events: none; transition: opacity 0.2s;
+  }
+  .modal-overlay.open { opacity: 1; pointer-events: all; }
+  @media (min-width: 600px) {
+    .modal-overlay { align-items: center; }
+  }
+  .modal {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 16px 16px 0 0;
+    width: 100%; max-height: 90vh;
+    display: flex; flex-direction: column;
+    transform: translateY(40px); transition: transform 0.25s;
+    padding-bottom: var(--safe-bottom);
+  }
+  @media (min-width: 600px) {
+    .modal { border-radius: 10px; width: 680px; max-width: 95vw; max-height: 85vh; transform: translateY(20px); padding-bottom: 0; }
+  }
+  .modal-overlay.open .modal { transform: translateY(0); }
+  .modal-handle {
+    width: 36px; height: 4px; background: var(--border);
+    border-radius: 2px; margin: 10px auto 0; flex-shrink: 0;
+  }
+  @media (min-width: 600px) { .modal-handle { display: none; } }
+  .modal-header { padding: 14px 18px 12px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
+  .modal-title { font-family: 'Playfair Display', serif; font-size: 18px; color: var(--accent); }
+  .modal-close { background: none; border: none; color: var(--muted); font-size: 22px; cursor: pointer; padding: 2px 6px; }
+  .modal-controls { padding: 12px 18px; border-bottom: 1px solid var(--border); display: flex; gap: 10px; align-items: center; flex-wrap: wrap; flex-shrink: 0; }
+  select {
+    background: var(--surface2); border: 1px solid var(--border);
+    color: var(--text); font-family: 'JetBrains Mono', monospace;
+    font-size: 13px; padding: 8px 12px; border-radius: 8px; outline: none;
+    -webkit-appearance: none; flex: 1;
+  }
+  .modal-body { flex: 1; overflow-y: auto; padding: 16px 18px; -webkit-overflow-scrolling: touch; }
+  .report-content { line-height: 1.8; color: var(--text); white-space: pre-wrap; font-size: 13px; }
+  .report-placeholder { color: var(--muted); text-align: center; padding: 40px 20px; font-size: 13px; line-height: 1.7; }
+  .modal-footer { padding: 12px 18px; border-top: 1px solid var(--border); display: flex; justify-content: flex-end; gap: 8px; flex-shrink: 0; }
+
+  /* Auth modal sheet */
+  .auth-modal {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 16px 16px 0 0;
+    width: 100%; max-height: 92vh; overflow-y: auto;
+    padding: 0 20px 20px;
+    display: flex; flex-direction: column; gap: 16px;
+    transform: translateY(40px); transition: transform 0.25s;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: calc(20px + var(--safe-bottom));
+  }
+  @media (min-width: 600px) {
+    .auth-modal { border-radius: 10px; width: 500px; max-width: 95vw; max-height: 90vh; transform: translateY(20px); padding-bottom: 20px; }
+  }
+  .modal-overlay.open .auth-modal { transform: translateY(0); }
+  .auth-title { font-family: 'Playfair Display', serif; font-size: 20px; color: var(--accent); padding-top: 8px; }
+  .auth-desc { font-size: 13px; color: var(--muted); line-height: 1.7; }
+  .auth-steps { display: flex; flex-direction: column; gap: 14px; }
+  .auth-step { display: flex; gap: 12px; align-items: flex-start; font-size: 13px; color: var(--text); line-height: 1.65; }
+  .step-num { width: 24px; height: 24px; border-radius: 50%; background: var(--accent); color: #0f0e0c; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; flex-shrink: 0; margin-top: 1px; }
+  .token-input {
+    width: 100%; background: var(--surface2); border: 1px solid var(--border);
+    color: var(--text); font-family: 'JetBrains Mono', monospace; font-size: 13px;
+    padding: 12px 14px; border-radius: 10px; outline: none; -webkit-appearance: none;
+  }
+  .token-input:focus { border-color: var(--accent); }
+  .token-input::placeholder { color: var(--muted); }
+  .auth-actions { display: flex; gap: 10px; justify-content: flex-end; }
+  .auth-note { font-size: 11px; color: var(--muted); opacity: 0.7; line-height: 1.6; padding: 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface2); }
+
+  /* Shared button */
+  .btn {
+    padding: 10px 18px;
+    border: 1px solid var(--border);
+    background: var(--surface2); color: var(--text);
+    font-family: 'JetBrains Mono', monospace; font-size: 12px;
+    cursor: pointer; border-radius: 8px; transition: all 0.2s;
+    white-space: nowrap; -webkit-user-select: none; user-select: none;
+  }
+  .btn:active { border-color: var(--accent); }
+  .btn.primary { background: var(--accent); color: #0f0e0c; border-color: var(--accent); font-weight: 500; }
+  .btn.primary:active { background: #e0b84e; }
+  .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  .spinner { display: inline-block; width: 13px; height: 13px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.7s linear infinite; }
+  @keyframes spin { to{transform:rotate(360deg)} }
+  .typing { display: flex; gap: 5px; padding: 12px 14px; align-items: center; }
+  .typing span { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); animation: bounce 1.2s infinite; }
+  .typing span:nth-child(2){animation-delay:.2s}
+  .typing span:nth-child(3){animation-delay:.4s}
+  @keyframes bounce{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-6px)}}
+  .toast {
+    position: fixed; bottom: calc(80px + var(--safe-bottom)); left: 50%; transform: translateX(-50%) translateY(10px);
+    background: var(--surface); border: 1px solid var(--border);
+    color: var(--text); font-size: 13px; padding: 10px 18px;
+    border-radius: 20px; z-index: 999; opacity: 0; transition: all 0.3s;
+    pointer-events: none; white-space: nowrap;
+  }
+  @media (min-width: 600px) { .toast { bottom: 24px; } }
+  .toast.show { transform: translateX(-50%) translateY(0); opacity: 1; }
+  .toast.success { border-color: var(--success); color: var(--success); }
+  .toast.error   { border-color: var(--danger);  color: var(--danger);  }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- HEADER -->
+  <header>
+    <button class="icon-btn menu-btn" onclick="toggleSidebar()" title="History">☰</button>
+    <div class="logo">Field Notes</div>
+    <div class="sync-pill">
+      <div class="sync-dot" id="syncDot"></div>
+      <span id="syncLabel">Local</span>
+    </div>
+    <button class="icon-btn" id="driveHeaderBtn" onclick="openAuthModal()" title="Connect Drive">☁</button>
+  </header>
+
+  <!-- MAIN -->
+  <div class="main">
+    <!-- Overlay -->
+    <div class="sidebar-overlay" id="sidebarOverlay" onclick="closeSidebar()"></div>
+
+    <!-- Sidebar -->
+    <div class="sidebar" id="sidebar">
+      <div class="sidebar-header">
+        <span>Log Entries</span>
+        <button class="sidebar-close" onclick="closeSidebar()">✕</button>
+      </div>
+      <div class="note-list" id="noteList"></div>
+    </div>
+
+    <!-- Chat -->
+    <div class="chat-area">
+      <div class="chat-date-bar">
+        <div class="date-dot"></div>
+        <span id="todayLabel"></span>
+      </div>
+      <div class="messages" id="messages"></div>
+      <div class="status-bar">
+        <div class="status-item"><div class="status-dot"></div><span id="noteCount">0 notes today</span></div>
+        <div class="status-item"><span id="totalCount">0 total</span></div>
+        <div class="status-item" id="lastSyncItem" style="display:none"><span id="lastSyncLabel"></span></div>
+      </div>
+      <div class="input-area">
+        <div class="input-row">
+          <button class="action-btn mic-btn" id="micBtn" onclick="toggleMic()">🎤</button>
+          <textarea id="noteInput" placeholder="Type or tap 🎤 to dictate…" rows="1"
+            onkeydown="handleKey(event)" oninput="autoResize(this)"></textarea>
+          <button class="action-btn send-btn" onclick="sendNote()">➤</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- BOTTOM NAV (mobile only) -->
+  <div class="bottom-nav">
+    <button class="nav-item active" onclick="showTab('notes',this)">
+      <span class="nav-icon">📝</span>
+      <span>Notes</span>
+    </button>
+    <button class="nav-item" onclick="showTab('history',this)">
+      <span class="nav-icon">📅</span>
+      <span>History</span>
+    </button>
+    <button class="nav-item" onclick="showTab('report',this)">
+      <span class="nav-icon">📊</span>
+      <span>Report</span>
+    </button>
+    <button class="nav-item" onclick="showTab('sync',this)">
+      <span class="nav-icon">☁</span>
+      <span>Sync</span>
+    </button>
+  </div>
+
+</div><!-- /app -->
+
+<!-- REPORT MODAL -->
+<div class="modal-overlay" id="reportModal">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-header">
+      <div class="modal-title">Report</div>
+      <button class="modal-close" onclick="closeReport()">✕</button>
+    </div>
+    <div class="modal-controls">
+      <select id="reportType">
+        <option value="week">This Week</option>
+        <option value="month">This Month</option>
+        <option value="last_week">Last Week</option>
+        <option value="last_month">Last Month</option>
+        <option value="all">All Time</option>
+      </select>
+      <button class="btn primary" onclick="generateReport()" id="genBtn">Generate</button>
+      <button class="btn" onclick="copyReport()" id="copyBtn" style="display:none">📋 Copy</button>
+    </div>
+    <div class="modal-body">
+      <div class="report-placeholder" id="reportPlaceholder">Select a time range and tap Generate to create an AI summary of your notes.</div>
+      <div class="report-content" id="reportContent" style="display:none"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeReport()">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- AUTH MODAL -->
+<div class="modal-overlay" id="authModal">
+  <div class="auth-modal">
+    <div class="modal-handle"></div>
+    <div class="auth-title">☁ Connect Google Drive</div>
+    <div class="auth-desc">
+      Notes sync to <strong style="color:var(--accent)">field-notes-data.json</strong> in your Google Drive. Saves locally first (instant), syncs to Drive in background.
+    </div>
+    <div class="auth-steps">
+      <div class="auth-step">
+        <div class="step-num">1</div>
+        <div>Go to <a href="https://developers.google.com/oauthplayground" target="_blank">Google OAuth Playground</a> → gear ⚙ → check "Use your own OAuth credentials" → paste your Client ID and Secret</div>
+      </div>
+      <div class="auth-step">
+        <div class="step-num">2</div>
+        <div>Select <strong>Drive API v3</strong> → check <code style="color:var(--accent);font-size:11px">…/auth/drive.file</code> → tap <strong>Authorize APIs</strong> → sign in</div>
+      </div>
+      <div class="auth-step">
+        <div class="step-num">3</div>
+        <div>Tap <strong>Exchange authorization code for tokens</strong> → copy the <strong>Access token</strong> value</div>
+      </div>
+      <div class="auth-step">
+        <div class="step-num">4</div>
+        <div>Paste it below and tap Connect. Token expires ~1 hour — app will alert you.</div>
+      </div>
+    </div>
+    <input class="token-input" type="password" id="tokenInput" placeholder="Paste Google OAuth access token…" />
+    <div class="auth-actions">
+      <button class="btn" onclick="closeAuthModal()">Cancel</button>
+      <button class="btn primary" onclick="connectDrive()" id="connectBtn">Connect</button>
+    </div>
+    <div class="auth-note">🔒 Token stored only in this browser's localStorage. Sent only to Google's API, never anywhere else.</div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const STORAGE_KEY   = 'field_notes_v2';
+const TOKEN_KEY     = 'field_notes_gtoken';
+const FILE_ID_KEY   = 'field_notes_gfile_id';
+const SYNC_TIME_KEY = 'field_notes_last_sync';
+const DRIVE_FILENAME = 'field-notes-data.json';
+
+let notes = [], recognition = null, isRecording = false;
+let conversationHistory = [];
+let driveToken = null, driveFileId = null;
+let syncTimeout = null, isSyncing = false;
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+async function init() {
+  const saved = localStorage.getItem(STORAGE_KEY);
+  if (saved) notes = JSON.parse(saved);
+  driveToken  = localStorage.getItem(TOKEN_KEY)   || null;
+  driveFileId = localStorage.getItem(FILE_ID_KEY) || null;
+
+  const now = new Date();
+  document.getElementById('todayLabel').textContent =
+    now.toLocaleDateString('en-US', { weekday:'short', month:'short', day:'numeric', year:'numeric' });
+
+  renderSidebar(); renderTodayMessages(); updateStatus(); setupSpeech();
+  if (driveToken) { updateDriveUI(true); await syncFromDrive(); }
+
+  // Prevent scroll bounce on iOS
+  document.addEventListener('touchmove', e => { if (e.target === document.body) e.preventDefault(); }, { passive: false });
+}
+
+function saveLocal() { localStorage.setItem(STORAGE_KEY, JSON.stringify(notes)); }
+function getToday()  { return new Date().toISOString().split('T')[0]; }
+
+// ── Notes ─────────────────────────────────────────────────────────────────────
+async function sendNote() {
+  const input = document.getElementById('noteInput');
+  const text = input.value.trim();
+  if (!text) return;
+  const note = { id: Date.now(), text, date: getToday(),
+    time: new Date().toLocaleTimeString('en-US', { hour:'2-digit', minute:'2-digit' }) };
+  notes.push(note); saveLocal();
+  input.value = ''; autoResize(input);
+  appendMessage(note); renderSidebar(); updateStatus();
+  scheduleDriveSync(); getAIAck(text);
+}
+
+async function getAIAck(noteText) {
+  const msgs = document.getElementById('messages');
+  const t = document.createElement('div');
+  t.className = 'msg assistant'; t.id = 'typing';
+  t.innerHTML = `<div class="msg-bubble"><div class="typing"><span></span><span></span><span></span></div></div>`;
+  msgs.appendChild(t); msgs.scrollTop = msgs.scrollHeight;
+  try {
+    const res = await fetch("https://api.anthropic.com/v1/messages", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({
+        model:"claude-sonnet-4-20250514", max_tokens:1000,
+        system:"You are a smart field notes assistant for a construction and estimating professional. Respond to each logged note with a single brief sentence — an acknowledgment, follow-up question, or useful reminder. Be concise and professional. Never repeat the note back.",
+        messages:[...conversationHistory,{role:"user",content:noteText}]
+      })
+    });
+    const data = await res.json();
+    document.getElementById('typing')?.remove();
+    const reply = data.content?.[0]?.text||'';
+    if (reply) {
+      conversationHistory.push({role:"user",content:noteText},{role:"assistant",content:reply});
+      if (conversationHistory.length>20) conversationHistory=conversationHistory.slice(-20);
+      const a = document.createElement('div');
+      a.className='msg assistant';
+      a.innerHTML=`<div class="msg-bubble">${reply}</div><div class="msg-time">AI · ${new Date().toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'})}</div>`;
+      msgs.appendChild(a); msgs.scrollTop=msgs.scrollHeight;
+    }
+  } catch(e){ document.getElementById('typing')?.remove(); }
+}
+
+function appendMessage(note) {
+  document.getElementById('emptyState')?.remove();
+  const msgs = document.getElementById('messages');
+  const el = document.createElement('div');
+  el.className='msg user'; el.dataset.noteId=note.id;
+  el.innerHTML=`<div class="msg-bubble">${escHtml(note.text)}</div><div class="msg-time">${note.time}</div>`;
+  msgs.appendChild(el); msgs.scrollTop=msgs.scrollHeight;
+}
+
+function renderTodayMessages() {
+  const msgs = document.getElementById('messages');
+  const todayNotes = notes.filter(n=>n.date===getToday());
+  msgs.innerHTML='';
+  if (!todayNotes.length) {
+    msgs.innerHTML=`<div class="empty-state" id="emptyState"><div class="empty-icon">📝</div><div class="empty-text">Start your daily log</div><div class="empty-sub">Type a note or tap the mic<br>to start dictating</div></div>`;
+    return;
+  }
+  todayNotes.forEach(n=>appendMessage(n));
+}
+
+function renderSidebar() {
+  const list = document.getElementById('noteList');
+  const byDate = {};
+  notes.forEach(n=>{ if(!byDate[n.date]) byDate[n.date]=[]; byDate[n.date].push(n); });
+  const dates = Object.keys(byDate).sort((a,b)=>b.localeCompare(a));
+  list.innerHTML = dates.map(date=>{
+    const first=byDate[date][0], count=byDate[date].length;
+    return `<div class="note-item ${date===getToday()?'active':''}">
+      <div class="note-date">${formatDateLabel(date)} <span style="color:var(--muted);font-size:10px">(${count})</span></div>
+      <div class="note-preview">${escHtml(first.text)}</div>
+    </div>`;
+  }).join('');
+}
+
+function formatDateLabel(dateStr) {
+  const [y,m,d]=dateStr.split('-').map(Number);
+  const dt=new Date(y,m-1,d), today=new Date(), yest=new Date(today);
+  yest.setDate(today.getDate()-1);
+  if(dateStr===getToday()) return 'Today';
+  if(dt.toDateString()===yest.toDateString()) return 'Yesterday';
+  return dt.toLocaleDateString('en-US',{month:'short',day:'numeric'});
+}
+
+function updateStatus() {
+  const tc=notes.filter(n=>n.date===getToday()).length;
+  document.getElementById('noteCount').textContent=`${tc} note${tc!==1?'s':''} today`;
+  document.getElementById('totalCount').textContent=`${notes.length} total`;
+  const ls=localStorage.getItem(SYNC_TIME_KEY);
+  if(ls){
+    document.getElementById('lastSyncLabel').textContent=`☁ ${new Date(ls).toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'})}`;
+    document.getElementById('lastSyncItem').style.display='flex';
+  }
+}
+
+// ── Sidebar ───────────────────────────────────────────────────────────────────
+function toggleSidebar() {
+  const s=document.getElementById('sidebar'), o=document.getElementById('sidebarOverlay');
+  const open=s.classList.toggle('open'); o.classList.toggle('open',open);
+}
+function closeSidebar() {
+  document.getElementById('sidebar').classList.remove('open');
+  document.getElementById('sidebarOverlay').classList.remove('open');
+}
+
+// ── Bottom nav tabs ───────────────────────────────────────────────────────────
+function showTab(tab, el) {
+  document.querySelectorAll('.nav-item').forEach(b=>b.classList.remove('active'));
+  el.classList.add('active');
+  if (tab==='notes')   { closeSidebar(); }
+  if (tab==='history') { toggleSidebar(); }
+  if (tab==='report')  { closeSidebar(); openReport(); }
+  if (tab==='sync')    { closeSidebar(); openAuthModal(); }
+  // reset to notes tab visually after modal actions
+  if (tab!=='notes' && tab!=='history') {
+    setTimeout(()=>{ el.classList.remove('active'); document.querySelectorAll('.nav-item')[0].classList.add('active'); },300);
+  }
+}
+
+// ── Drive Sync ────────────────────────────────────────────────────────────────
+function scheduleDriveSync() {
+  if (!driveToken) return;
+  clearTimeout(syncTimeout);
+  syncTimeout = setTimeout(()=>syncToDrive(), 3000);
+}
+
+async function syncToDrive(manual=false) {
+  if (!driveToken||isSyncing) return;
+  isSyncing=true; setSyncState('syncing','Saving…');
+  try {
+    const content=JSON.stringify({notes,exportedAt:new Date().toISOString()});
+    if (driveFileId) {
+      const res=await fetch(`https://www.googleapis.com/upload/drive/v3/files/${driveFileId}?uploadType=media`,{
+        method:'PATCH',headers:{Authorization:`Bearer ${driveToken}`,'Content-Type':'application/json'},body:content
+      });
+      if(res.status===401){handleTokenExpired();return;}
+      if(!res.ok) throw new Error();
+    } else {
+      const fid=await createDriveFile(content);
+      if(!fid) throw new Error();
+      driveFileId=fid; localStorage.setItem(FILE_ID_KEY,fid);
+    }
+    localStorage.setItem(SYNC_TIME_KEY,new Date().toISOString());
+    setSyncState('synced','Synced'); updateStatus();
+    if(manual) showToast('Synced to Drive ✓','success');
+  } catch(e){ setSyncState('error','Sync failed'); if(manual) showToast('Sync failed','error'); }
+  finally { isSyncing=false; }
+}
+
+async function syncFromDrive() {
+  if(!driveToken) return;
+  setSyncState('syncing','Loading…');
+  try {
+    const sr=await driveRequest(`https://www.googleapis.com/drive/v3/files?q=name='${DRIVE_FILENAME}' and trashed=false&fields=files(id,name)`);
+    if(!sr) throw new Error();
+    const files=sr.files||[];
+    if(!files.length){ await syncToDrive(); return; }
+    driveFileId=files[0].id; localStorage.setItem(FILE_ID_KEY,driveFileId);
+    const fr=await fetch(`https://www.googleapis.com/drive/v3/files/${driveFileId}?alt=media`,{headers:{Authorization:`Bearer ${driveToken}`}});
+    if(fr.status===401){handleTokenExpired();return;}
+    if(!fr.ok) throw new Error();
+    const data=await fr.json();
+    notes=mergeNotes(notes,data.notes||[]);
+    saveLocal(); renderSidebar(); renderTodayMessages();
+    localStorage.setItem(SYNC_TIME_KEY,new Date().toISOString());
+    setSyncState('synced','Synced'); updateStatus();
+    showToast(`Loaded from Drive ✓`,'success');
+  } catch(e){ setSyncState('error','Load failed'); }
+}
+
+async function createDriveFile(content) {
+  const m=await fetch('https://www.googleapis.com/drive/v3/files',{
+    method:'POST',headers:{Authorization:`Bearer ${driveToken}`,'Content-Type':'application/json'},
+    body:JSON.stringify({name:DRIVE_FILENAME,mimeType:'application/json'})
+  });
+  if(!m.ok) return null;
+  const meta=await m.json();
+  const u=await fetch(`https://www.googleapis.com/upload/drive/v3/files/${meta.id}?uploadType=media`,{
+    method:'PATCH',headers:{Authorization:`Bearer ${driveToken}`,'Content-Type':'application/json'},body:content
+  });
+  return u.ok ? meta.id : null;
+}
+
+async function driveRequest(url) {
+  const res=await fetch(url,{headers:{Authorization:`Bearer ${driveToken}`}});
+  if(res.status===401){handleTokenExpired();return null;}
+  if(!res.ok) return null;
+  return res.json();
+}
+
+function mergeNotes(local,remote) {
+  const map=new Map();
+  [...local,...remote].forEach(n=>{if(!map.has(n.id))map.set(n.id,n);});
+  return Array.from(map.values()).sort((a,b)=>a.date===b.date?a.id-b.id:a.date.localeCompare(b.date));
+}
+
+function setSyncState(state,label) {
+  document.getElementById('syncDot').className='sync-dot '+state;
+  document.getElementById('syncLabel').textContent=label;
+}
+
+function handleTokenExpired() {
+  driveToken=null; localStorage.removeItem(TOKEN_KEY);
+  setSyncState('error','Token expired'); updateDriveUI(false);
+  showToast('Token expired — reconnect Drive','error');
+}
+
+// ── Auth ──────────────────────────────────────────────────────────────────────
+function openAuthModal()  { document.getElementById('authModal').classList.add('open'); }
+function closeAuthModal() { document.getElementById('authModal').classList.remove('open'); }
+
+async function connectDrive() {
+  const token=document.getElementById('tokenInput').value.trim();
+  if(!token){showToast('Paste your access token first','error');return;}
+  const btn=document.getElementById('connectBtn');
+  btn.disabled=true; btn.textContent='Verifying…';
+  const tr=await fetch('https://www.googleapis.com/drive/v3/about?fields=user',{headers:{Authorization:`Bearer ${token}`}});
+  btn.disabled=false; btn.textContent='Connect';
+  if(!tr.ok){showToast('Invalid token — try again','error');return;}
+  const ud=await tr.json();
+  driveToken=token; driveFileId=null;
+  localStorage.setItem(TOKEN_KEY,token); localStorage.removeItem(FILE_ID_KEY);
+  closeAuthModal(); updateDriveUI(true);
+  showToast(`Connected as ${ud.user?.displayName||'Google account'} ✓`,'success');
+  await syncFromDrive();
+}
+
+function updateDriveUI(connected) {
+  const btn=document.getElementById('driveHeaderBtn');
+  if(connected){
+    btn.textContent='✓'; btn.classList.add('active'); btn.onclick=disconnectDrive;
+    setSyncState('synced','Synced');
+  } else {
+    btn.textContent='☁'; btn.classList.remove('active'); btn.onclick=openAuthModal;
+    document.getElementById('syncDot').className='sync-dot';
+    document.getElementById('syncLabel').textContent='Local';
+    document.getElementById('lastSyncItem').style.display='none';
+  }
+}
+
+function disconnectDrive() {
+  if(!confirm('Disconnect Drive? Notes stay saved locally.')) return;
+  driveToken=null; driveFileId=null;
+  localStorage.removeItem(TOKEN_KEY); localStorage.removeItem(FILE_ID_KEY); localStorage.removeItem(SYNC_TIME_KEY);
+  updateDriveUI(false); updateStatus(); showToast('Disconnected from Drive');
+}
+
+// ── Report ────────────────────────────────────────────────────────────────────
+function openReport()  { document.getElementById('reportModal').classList.add('open'); }
+function closeReport() { document.getElementById('reportModal').classList.remove('open'); }
+
+async function generateReport() {
+  const type=document.getElementById('reportType').value;
+  const filtered=filterNotesByRange(type);
+  if(!filtered.length){
+    document.getElementById('reportContent').style.display='none';
+    document.getElementById('reportPlaceholder').style.display='block';
+    document.getElementById('reportPlaceholder').textContent='No notes found for this time range.';
+    return;
+  }
+  const btn=document.getElementById('genBtn');
+  btn.disabled=true; btn.innerHTML='<span class="spinner"></span> Generating…';
+  document.getElementById('reportContent').style.display='none';
+  document.getElementById('reportPlaceholder').style.display='block';
+  document.getElementById('reportPlaceholder').textContent='AI is analyzing your notes…';
+  document.getElementById('copyBtn').style.display='none';
+  const noteBlock=filtered.map(n=>`[${n.date} ${n.time}] ${n.text}`).join('\n');
+  const rl={week:'this week',month:'this month',last_week:'last week',last_month:'last month',all:'all time'}[type];
+  try {
+    const res=await fetch("https://api.anthropic.com/v1/messages",{
+      method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({
+        model:"claude-sonnet-4-20250514",max_tokens:1000,
+        system:`You are an expert at synthesizing field notes into clear professional reports for construction and estimating professionals. Structure the report: 1) Executive Summary, 2) Key Activities by Date, 3) Open Items / Follow-ups, 4) Patterns or Observations. Use clear headings, professional prose.`,
+        messages:[{role:"user",content:`Create a report for ${rl} from these field notes:\n\n${noteBlock}`}]
+      })
+    });
+    const data=await res.json();
+    const report=data.content?.[0]?.text||'No report generated.';
+    document.getElementById('reportPlaceholder').style.display='none';
+    const rc=document.getElementById('reportContent');
+    rc.style.display='block'; rc.textContent=report;
+    document.getElementById('copyBtn').style.display='inline-block';
+  } catch(e){ document.getElementById('reportPlaceholder').textContent='Error — please try again.'; }
+  btn.disabled=false; btn.textContent='Generate';
+}
+
+function filterNotesByRange(type) {
+  const now=new Date();
+  if(type==='all') return notes;
+  let start,end;
+  if(type==='week'){start=new Date(now);start.setDate(now.getDate()-now.getDay());end=now;}
+  else if(type==='last_week'){end=new Date(now);end.setDate(now.getDate()-now.getDay()-1);start=new Date(end);start.setDate(end.getDate()-6);}
+  else if(type==='month'){start=new Date(now.getFullYear(),now.getMonth(),1);end=now;}
+  else if(type==='last_month'){start=new Date(now.getFullYear(),now.getMonth()-1,1);end=new Date(now.getFullYear(),now.getMonth(),0);}
+  const s=start.toISOString().split('T')[0],e=end.toISOString().split('T')[0];
+  return notes.filter(n=>n.date>=s&&n.date<=e);
+}
+
+function copyReport() {
+  navigator.clipboard.writeText(document.getElementById('reportContent').textContent).then(()=>{
+    const btn=document.getElementById('copyBtn');
+    btn.textContent='✓ Copied!'; setTimeout(()=>btn.textContent='📋 Copy',2000);
+  });
+}
+
+// ── Speech ────────────────────────────────────────────────────────────────────
+function setupSpeech() {
+  if(!('webkitSpeechRecognition' in window)&&!('SpeechRecognition' in window)){
+    document.getElementById('micBtn').style.opacity='0.3';
+    return;
+  }
+  const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+  recognition=new SR();
+  recognition.continuous=true; recognition.interimResults=true; recognition.lang='en-US';
+  recognition.onresult=(e)=>{
+    const input=document.getElementById('noteInput');
+    let t='';
+    for(let i=e.resultIndex;i<e.results.length;i++) t+=e.results[i][0].transcript;
+    input.value=t; autoResize(input);
+  };
+  recognition.onend=()=>{
+    if(isRecording){const input=document.getElementById('noteInput');if(input.value.trim())sendNote();}
+    isRecording=false;
+    document.getElementById('micBtn').classList.remove('recording');
+    document.getElementById('micBtn').textContent='🎤';
+  };
+}
+
+function toggleMic() {
+  if(!recognition) return;
+  if(isRecording){recognition.stop();isRecording=false;}
+  else{
+    document.getElementById('noteInput').value='';
+    recognition.start(); isRecording=true;
+    document.getElementById('micBtn').classList.add('recording');
+    document.getElementById('micBtn').textContent='⏹';
+  }
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function handleKey(e){ if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendNote();} }
+function autoResize(el){ el.style.height='auto'; el.style.height=Math.min(el.scrollHeight,130)+'px'; }
+function escHtml(s){ return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>'); }
+function clearAll(){
+  if(confirm('Clear ALL notes?')){notes=[];saveLocal();renderSidebar();renderTodayMessages();updateStatus();}
+}
+function showToast(msg,type=''){
+  const t=document.getElementById('toast');
+  t.textContent=msg; t.className='toast show '+type;
+  setTimeout(()=>t.className='toast '+type,3500);
+}
+
+['reportModal','authModal'].forEach(id=>{
+  document.getElementById(id).addEventListener('click',function(e){
+    if(e.target===this){ if(id==='reportModal')closeReport(); else closeAuthModal(); }
+  });
+});
+
+init();
+</script>
+</body>
+</html>
